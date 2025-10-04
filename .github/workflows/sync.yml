@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        branch: [master]   # 需要同步的分支列表
+        branch: [main, master, dev]   # 需要同步的分支列表
     steps:
       # 1. 检出当前 fork 仓库代码
       - name: Checkout target repo
@@ -42,7 +42,7 @@ jobs:
           git remote add upstream $UPSTREAM
           git fetch upstream
 
-      # 4. 创建同步分支并合并上游更新（带分支存在性检测）
+      # 4. 创建同步分支并合并上游更新（带分支存在性检测 + 忽略 workflow 文件）
       - name: Create sync branch
         run: |
           BRANCH="sync-${{ matrix.branch }}-$(date +%Y%m%d%H%M%S)"
@@ -69,6 +69,9 @@ jobs:
           # 合并上游更新（允许冲突，后续通过 PR 解决）
           git merge upstream/${{ matrix.branch }} || true
 
+          # 忽略 workflow 文件的改动，避免推送失败
+          git checkout HEAD -- .github/workflows/ || true
+
           # 新建同步分支保存合并结果
           git checkout -b $BRANCH
 
@@ -88,5 +91,6 @@ jobs:
           title: "🔄 Sync fork: ${{ matrix.branch }}"
           body: |
             This PR was automatically created to sync changes from upstream/${{ matrix.branch }}.
+            Workflow files were ignored to avoid permission issues.
             Please review and merge.
           base: ${{ matrix.branch }}
