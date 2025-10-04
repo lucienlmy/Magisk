@@ -47,14 +47,36 @@ jobs:
           git remote add upstream $UPSTREAM
           git fetch upstream
 
-      # 4. 创建同步分支并合并上游更新
+      # 4. 创建同步分支并合并上游更新（带容错）
       - name: Create sync branch
         run: |
           BRANCH="sync-${{ matrix.branch }}-$(date +%Y%m%d%H%M%S)"
+
+          # 如果分支不存在则跳过
+          if ! git show-ref --verify --quiet refs/remotes/origin/${{ matrix.branch }} && \
+             ! git show-ref --verify --quiet refs/heads/${{ matrix.branch }}; then
+            echo "⚠️ 分支 ${{ matrix.branch }} 在当前仓库不存在，跳过同步"
+            exit 0
+          fi
+
+          # 切换到目标分支（如果本地没有就从 origin 拉取）
           git checkout ${{ matrix.branch }} || git checkout -b ${{ matrix.branch }} origin/${{ matrix.branch }}
-          git merge upstream/${{ matrix.branch }} || true
+
+          # 尝试合并上游分支的更新
+          if git show-ref --verify --quiet refs/remotes/upstream/${{ matrix.branch }}; then
+            git merge upstream/${{ matrix.branch }} || true
+          else
+            echo "⚠️ 上游仓库没有分支 ${{ matrix.branch }}，跳过合并"
+            exit 0
+          fi
+
+          # 新建一个同步分支保存合并结果
           git checkout -b $BRANCH
+
+          # 推送到当前 fork 仓库
           git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git $BRANCH
+
+          # 保存分支名到环境变量，供后续步骤使用
           echo "BRANCH=$BRANCH" >> $GITHUB_ENV
 
       # 5. 自动创建 Pull Request
