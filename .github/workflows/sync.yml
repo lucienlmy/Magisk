@@ -59,6 +59,10 @@ jobs:
             exit 0
           fi
 
+          # 确保本地有最新的分支引用
+          git fetch origin ${{ matrix.branch }} || true
+          git fetch upstream ${{ matrix.branch }} || true
+
           # 切换到目标分支
           git checkout ${{ matrix.branch }} || git checkout -b ${{ matrix.branch }} origin/${{ matrix.branch }}
 
