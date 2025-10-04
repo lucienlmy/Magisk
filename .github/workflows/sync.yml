@@ -69,8 +69,9 @@ jobs:
           # 合并上游更新（允许冲突，后续通过 PR 解决）
           git merge upstream/${{ matrix.branch }} || true
 
-          # 忽略 workflow 文件的改动，避免推送失败
+          # 丢弃 workflow 文件的改动，避免推送失败
           git checkout HEAD -- .github/workflows/ || true
+          git reset HEAD .github/workflows/ || true
 
           # 新建同步分支保存合并结果
           git checkout -b $BRANCH
