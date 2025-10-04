@@ -28,14 +28,10 @@ jobs:
       # 3. 自动检测上游仓库地址，如果失败则使用手写的备用地址
       - name: Detect or fallback upstream repo
         run: |
-          # 手写的备用上游仓库地址（请改成你的上游仓库）
           FALLBACK="https://github.com/原作者/仓库名.git"
-
-          # 调用 GitHub API 获取 parent 仓库地址
           UPSTREAM=$(curl -s https://api.github.com/repos/${{ github.repository }} \
             | jq -r '.parent.clone_url // empty')
 
-          # 如果没获取到，就用手写的地址
           if [ -z "$UPSTREAM" ]; then
             echo "⚠️ 未检测到 fork 上游，使用备用地址: $FALLBACK"
             UPSTREAM=$FALLBACK
@@ -43,40 +39,39 @@ jobs:
             echo "✅ 自动检测到上游仓库: $UPSTREAM"
           fi
 
-          # 添加并 fetch 上游
           git remote add upstream $UPSTREAM
           git fetch upstream
 
-      # 4. 创建同步分支并合并上游更新（带容错）
+      # 4. 创建同步分支并合并上游更新（带分支存在性检测）
       - name: Create sync branch
         run: |
           BRANCH="sync-${{ matrix.branch }}-$(date +%Y%m%d%H%M%S)"
 
-          # 如果分支不存在则跳过
-          if ! git show-ref --verify --quiet refs/remotes/origin/${{ matrix.branch }} && \
-             ! git show-ref --verify --quiet refs/heads/${{ matrix.branch }}; then
-            echo "⚠️ 分支 ${{ matrix.branch }} 在当前仓库不存在，跳过同步"
+          # 检查 fork 仓库是否有该分支
+          if ! git ls-remote --exit-code origin ${{ matrix.branch }} >/dev/null 2>&1; then
+            echo "⚠️ 当前仓库不存在分支 ${{ matrix.branch }}，跳过同步"
             exit 0
           fi
 
-          # 切换到目标分支（如果本地没有就从 origin 拉取）
+          # 检查上游仓库是否有该分支
+          if ! git ls-remote --exit-code upstream ${{ matrix.branch }} >/dev/null 2>&1; then
+            echo "⚠️ 上游仓库不存在分支 ${{ matrix.branch }}，跳过同步"
+            exit 0
+          fi
+
+          # 切换到目标分支
           git checkout ${{ matrix.branch }} || git checkout -b ${{ matrix.branch }} origin/${{ matrix.branch }}
 
-          # 尝试合并上游分支的更新
-          if git show-ref --verify --quiet refs/remotes/upstream/${{ matrix.branch }}; then
-            git merge upstream/${{ matrix.branch }} || true
-          else
-            echo "⚠️ 上游仓库没有分支 ${{ matrix.branch }}，跳过合并"
-            exit 0
-          fi
+          # 合并上游更新（允许冲突，后续通过 PR 解决）
+          git merge upstream/${{ matrix.branch }} || true
 
-          # 新建一个同步分支保存合并结果
+          # 新建同步分支保存合并结果
           git checkout -b $BRANCH
 
-          # 推送到当前 fork 仓库
+          # 推送到 fork 仓库
           git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git $BRANCH
 
-          # 保存分支名到环境变量，供后续步骤使用
+          # 保存分支名供后续步骤使用
           echo "BRANCH=$BRANCH" >> $GITHUB_ENV
 
       # 5. 自动创建 Pull Request
